@@ -47,6 +47,22 @@ class GeneratePrompt(Transform):
         return record
 
 
+
+class GeneratePerturbedInputs(Transform):
+    def __init__(self, perturbation_config: PerturbationConfig):
+        self.perturbation_config = perturbation_config
+
+    def __call__(self, record: Record) -> Record:
+        original_model_output = record["model_output"]
+        perturbation = PERTURBATION_TYPE_TO_HELPER_CLASS[self.perturbation_config.perturbation_type]()
+        record["perturbed_inputs"] = perturbation.perturb(
+            text=record["model_input"],
+            config=self.perturbation_config,
+            num_perturbations=self.perturbation_config.num_perturbations,
+        )
+        return record
+
+
 class TransformPipeline:
     def __init__(self, pipeline: List[Transform]):
         self.pipeline = pipeline
