@@ -1,7 +1,5 @@
-from fmeval.data_loaders.data_config import DataConfig
 from fmeval.data_loaders.util import get_dataset
-from fmeval.eval_algorithms.helper_models.helper_model import BertscoreHelperModel
-from fmeval.transforms.summarization_accuracy import SummarizationAccuracy, SummarizationAccuracyConfig
+from fmeval.transforms.summarization_accuracy import SummarizationAccuracy
 from fmeval.transforms.util import GeneratePrompt, GetModelResponse, PromptComposer
 from fmeval.transforms.transform_pipeline import TransformPipeline
 from fmeval.eval_algorithms import DATASET_CONFIGS, XSUM
@@ -18,18 +16,12 @@ gen_prompt = GeneratePrompt(
 
 get_model_response = GetModelResponse(
     model_runner=sm_model_runner,
-    model_input_keys=gen_prompt.prompt_keys,
+    model_input_keys=gen_prompt.output_keys,
     model_response_keys=["model_output"],
 )
 
-config = SummarizationAccuracyConfig(
-    model_output_key=get_model_response.model_output_keys[get_model_response.model_input_keys[0]][0]
-)
-bertscore_model = BertscoreHelperModel.remote(
-    model_type=config.bertscore_model_type
-)
-summ_acc = SummarizationAccuracy(config, bertscore_model)
+summ_acc = SummarizationAccuracy(model_output_key=get_model_response.output_keys[0])
 
-pipeline = TransformPipeline([gen_prompt, get_model_response, summ_acc])
+pipeline = TransformPipeline([gen_prompt, get_model_response, summ_acc.pipeline])
 ds = pipeline.execute(ds)
 ds.show()

@@ -29,6 +29,8 @@ class ButterFinger(Perturbation):
     Adopted from: https://github.com/GEM-benchmark/NL-Augmenter/blob/c591130760b453b3ad09516849dfc26e721eeb24/nlaugmenter/transformations/butter_fingers_perturbation/transformation.py
     """
 
+    _transform_name = "ButterFinger"
+
     # Setting default values from NL-Augmenter
     QUERTY_KEY_APPROX: Dict[str, str] = dict()
     QUERTY_KEY_APPROX["q"] = "qwasedzx"
@@ -71,7 +73,8 @@ class ButterFinger(Perturbation):
 
     def __call__(self, record: Record) -> Record:
         for perturbed_text_key in self.perturbed_text_keys:
-            assert perturbed_text_key not in record, f"Perturbed text key {perturbed_text_key} already exists in record {record}"
+            assert perturbed_text_key not in record, \
+                f"Perturbed text key {perturbed_text_key} already exists in record {record}"
 
         perturbed_texts = self.perturb(record[self.input_text_key])
         for key, text in zip(self.perturbed_text_keys, perturbed_texts):
@@ -80,7 +83,14 @@ class ButterFinger(Perturbation):
         return record
 
     def _generate_perturbed_text_keys(self) -> List[str]:
-        return [f"[{self.input_text_key}]_[butter_finger_perturbation_{i}]" for i in range(self.num_perturbations)]
+        return [
+            f"{self.input_text_key}.{self._transform_name}({i})"
+            for i in range(self.num_perturbations)
+        ]
+
+    @property
+    def output_keys(self):
+        return self.perturbed_text_keys
 
     def perturb(self, text: str) -> List[str]:
         prob_of_typo = int(self.perturbation_prob * 100)
