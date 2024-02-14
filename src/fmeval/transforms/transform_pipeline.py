@@ -2,6 +2,7 @@ import inspect
 import ray.data
 from typing import List, Union
 from fmeval.transforms.transform import Transform
+from fmeval.util import get_num_actors
 
 NestedTransform = Union[Transform, "TransformPipeline"]
 
@@ -31,6 +32,6 @@ class TransformPipeline:
             dataset = dataset.map(
                 transform.__class__,
                 fn_constructor_kwargs={k: v for k, v in transform.__dict__.items() if k in init_arg_names},
-                concurrency=(1, 8),
+                concurrency=(1, get_num_actors()),
             ).materialize()
         return dataset

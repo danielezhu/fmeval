@@ -84,7 +84,7 @@ class ButterFinger(Perturbation):
 
     def _generate_perturbed_text_keys(self) -> List[str]:
         return [
-            f"{self.input_text_key}.{self._transform_name}({i})"
+            f"{self._transform_name}({self.input_text_key})[{i}]"
             for i in range(self.num_perturbations)
         ]
 
