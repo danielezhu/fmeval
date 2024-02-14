@@ -85,3 +85,20 @@ class GenerateDeltaScores(Transform):
             self._delta_score_key(perturbed_score_key)
             for perturbed_score_key in self.perturbed_score_keys
         ]
+
+
+class Mean(Transform):
+    _transform_name = "Mean"
+
+    def __init__(self, input_keys: List[str]):
+        self.input_keys = input_keys
+        self.output_key = f"{self._transform_name}({self.input_keys})"
+
+    def __call__(self, record: Record) -> Record:
+        avg = sum(record[input_key] for input_key in self.input_keys) / len(self.input_keys)
+        record[self.output_key] = avg
+        return record
+
+    @property
+    def output_keys(self):
+        return [self.output_key]
