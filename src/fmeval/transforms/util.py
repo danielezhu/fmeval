@@ -1,8 +1,9 @@
-from typing import Tuple, List
+from typing import Tuple, List, Dict, Any
 
 from fmeval.model_runners.composers.composers import PromptComposer
 from fmeval.model_runners.model_runner import ModelRunner
 from fmeval.transforms.transform import Transform, Record
+from functools import wraps
 
 
 class GetModelResponse(Transform):
@@ -102,3 +103,76 @@ class Mean(Transform):
     @property
     def output_keys(self):
         return [self.output_key]
+
+
+"""
+Function-based approach (as opposed to the class-based approach above)
+"""
+
+
+class TransformFunction:
+    def __init__(self, f, *args, **kwargs):
+        self.f = f
+        self.args = args
+        self.kwargs = kwargs
+
+
+def register_transform(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        return TransformFunction(f, *args, **kwargs)
+
+    return wrapper
+
+
+def create_output_key(transform_name: str, *args, **kwargs) -> str:
+    def args_to_str(positional_args: Tuple[str]) -> str:
+        return ", ".join(str(arg) for arg in positional_args)
+
+    def kwargs_to_str(keyword_args: Dict[str, Any]) -> str:
+        return ", ".join(f"{k}={str(v)}" for k, v in keyword_args.items())
+
+    args_string = args_to_str(args)
+    kwargs_string = kwargs_to_str(kwargs)
+    output_key = f"{transform_name}("
+    if args_string:
+        output_key += args_string
+    if kwargs_string:
+        output_key += kwargs_string
+    output_key += ")"
+    return output_key
+
+
+@register_transform
+def generate_prompt(
+        record: Record,
+        prompt_composer: PromptComposer,
+        input_keys: List[str],
+) -> Record:
+    prompt_keys = [create_output_key("generate_prompt", input_key) for input_key in input_keys]
+    for input_key, prompt_key in zip(input_keys, prompt_keys):
+        record[prompt_key] = prompt_composer.compose(record[input_key])
+    return record
+
+
+@register_transform
+def get_model_response(
+        record: Record,
+        model_runner: ModelRunner,
+        model_input_keys: List[str],
+        model_response_keys: Tuple[str]
+) -> Record:
+    model_output_keys = {
+        model_input_key: [
+            create_output_key("get_model_response", model_runner, model_input_key, model_response_key)
+            for model_response_key in model_response_keys
+        ]
+        for model_input_key in model_input_keys
+    }
+    for model_input_key in model_input_keys:
+        model_response = model_runner.predict(record[model_input_key])
+        # We should add validation that the number of output cols matches the number of fields
+        # in the ModelResponse object that is the output of self.model_runner.predict()
+        for model_response_item, model_output_key in zip(model_response, model_output_keys[model_input_key]):
+            record[model_output_key] = model_response_item
+    return record
