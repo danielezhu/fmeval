@@ -51,6 +51,7 @@ class MeteorScore(Transform):
             model_output_key: str,
             meteor_score_output_key: str,
             load_helpers: bool = False) -> Record:
+        super().__init__(target_output_key, model_output_key, meteor_score_output_key, load_helpers)
         self.target_output_key = target_output_key
         self.model_output_key = model_output_key
         self.meteor_score_output_key = meteor_score_output_key
@@ -95,6 +96,7 @@ class RougeScore(Transform):
                 f"Invalid rouge_type: {rouge_type} requested in SummarizationAccuracyConfig, "
                 f"please choose from acceptable values: {ROUGE_TYPES}"
             )
+        super().__init__(target_output_key, model_output_key, rouge_score_output_key, rouge_type=rouge_type, use_stemmer=use_stemmer)
         self.target_output_key = target_output_key
         self.model_output_key = model_output_key
         self.rouge_score_output_key = rouge_score_output_key
@@ -132,6 +134,7 @@ class BertScore(Transform):
             bertscore_output_key: str,
             bertscore_model_ref: ObjectRef
     ):
+        super().__init__(target_output_key, model_output_key, bertscore_output_key, bertscore_model_ref)
         self.target_output_key = target_output_key
         self.model_output_key = model_output_key
         self.bertscore_output_key = bertscore_output_key

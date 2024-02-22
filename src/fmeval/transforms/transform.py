@@ -6,9 +6,9 @@ Record = Dict[str, Any]
 
 
 class Transform(ABC):
-    @abstractmethod
-    def __init__(self, **kwargs):
-        """"""""
+    def __init__(self, *args, **kwargs):
+        self.args = args
+        self.kwargs = kwargs
 
     @abstractmethod
     def __call__(self, record: Record) -> Record:

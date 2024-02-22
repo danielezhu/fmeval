@@ -9,13 +9,13 @@ class GetModelResponse(Transform):
     _transform_name = "GetModelResponse"
 
     def __init__(self, model_runner: ModelRunner, model_input_keys: List[str], model_response_keys: Tuple[str]):
+        super().__init__(model_runner, model_input_keys, model_response_keys)
         self.model_runner = model_runner
         self.model_input_keys = model_input_keys
-        self.model_response_keys = model_response_keys
         self.model_output_keys = {
             model_input_key: [
                 self._model_output_key(model_input_key, model_response_key)
-                for model_response_key in self.model_response_keys
+                for model_response_key in model_response_keys
             ]
             for model_input_key in self.model_input_keys
         }
@@ -45,6 +45,7 @@ class GeneratePrompt(Transform):
     _transform_name = "GeneratePrompt"
 
     def __init__(self, prompt_composer: PromptComposer, input_keys: List[str]):
+        super().__init__(prompt_composer, input_keys)
         self.prompt_composer = prompt_composer
         self.input_keys = input_keys
         self.prompt_keys = [self._prompt_key(input_key) for input_key in self.input_keys]
@@ -67,6 +68,7 @@ class GenerateDeltaScores(Transform):
     _transform_name = "GenerateDeltaScores"
 
     def __init__(self, original_score_key: str, perturbed_score_keys: List[str]):
+        super().__init__(original_score_key, perturbed_score_keys)
         self.original_score_key = original_score_key
         self.perturbed_score_keys = perturbed_score_keys
 
@@ -91,6 +93,7 @@ class Mean(Transform):
     _transform_name = "Mean"
 
     def __init__(self, input_keys: List[str]):
+        super().__init__(input_keys)
         self.input_keys = input_keys
         self.output_key = f"{self._transform_name}({self.input_keys})"
 

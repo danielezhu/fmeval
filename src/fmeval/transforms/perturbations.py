@@ -6,18 +6,12 @@ import itertools
 import numpy as np
 
 
-class Perturbation(Transform, ABC):
-
-    def __init__(self, seed: int = 5):
-        self.set_seed(seed)
-
-    @staticmethod
-    def set_seed(seed: int):
-        random.seed(seed)
-        np.random.seed(seed)
+def set_seed(seed: int):
+    random.seed(seed)
+    np.random.seed(seed)
 
 
-class ButterFinger(Perturbation):
+class ButterFinger(Transform):
     """
     Given a text, add keyboard induced typos in randomly selected words.
     Keyboard induced typos are ones where a character is replaced by adjacent characters on the keyboard.
@@ -64,8 +58,8 @@ class ButterFinger(Perturbation):
     QUERTY_KEY_APPROX[" "] = " "
 
     def __init__(self, input_text_key: str, perturbation_prob: float, num_perturbations: int = 5, seed: int = 5):
-        super().__init__(seed)
-        self.seed = seed
+        set_seed(seed)
+        super().__init__(input_text_key, perturbation_prob, num_perturbations)
         self.perturbation_prob = perturbation_prob
         self.num_perturbations = num_perturbations
         self.input_text_key = input_text_key

@@ -9,7 +9,7 @@ NestedTransform = Union[Transform, "TransformPipeline"]
 
 class TransformPipeline:
     def __init__(self, nested_transforms: List[NestedTransform]):
-        self.pipeline = TransformPipeline.flatten(nested_transforms)
+        self.pipeline: List[Transform] = TransformPipeline.flatten(nested_transforms)
 
     @staticmethod
     def flatten(nested_transforms: Union[NestedTransform, List[NestedTransform]]) -> List[Transform]:
@@ -28,10 +28,11 @@ class TransformPipeline:
             init_arg_names = inspect.signature(transform.__init__).parameters.keys()
             # We need to materialize the dataset after each transform to ensure that
             # the transformation gets executed in full before the next one starts.
-            # Otherwise, we can have deadlock.
+            # Otherwise, it appears we can have deadlock.
             dataset = dataset.map(
                 transform.__class__,
-                fn_constructor_kwargs={k: v for k, v in transform.__dict__.items() if k in init_arg_names},
+                fn_constructor_args=transform.args,
+                fn_constructor_kwargs=transform.kwargs,
                 concurrency=(1, get_num_actors()),
-            ).materialize()
+            )  #.materialize()
         return dataset
