@@ -1,8 +1,25 @@
+import ray
 from typing import Tuple, List
+
+from ray import ObjectRef
 
 from fmeval.model_runners.composers.composers import PromptComposer
 from fmeval.model_runners.model_runner import ModelRunner
 from fmeval.transforms.transform import Transform, Record
+
+
+def shared_resource(resource: object, num_cpus: int = 1) -> ObjectRef:
+    """
+    Creates a Ray Actor out of `resource`.
+
+    :param resource: The object to be converted into a Ray Actor.
+        This should be some shared resource like a BertscoreHelperModel instance.
+    :param num_cpus: The num_cpus parameter to pass to ray.remote()
+    :returns: A Ray Actor handle.
+    """
+    resource_cls, serialized_data = resource.__reduce__()
+    wrapped_resource_cls = ray.remote(num_cpus=num_cpus)(resource_cls)
+    return wrapped_resource_cls.remote(*serialized_data)
 
 
 class GetModelResponse(Transform):

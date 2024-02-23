@@ -1,20 +1,15 @@
-from dataclasses import dataclass
-from typing import Optional
-
-from ray import ObjectRef
-
-from fmeval.eval_algorithms.helper_models.helper_model import BertscoreHelperModel
-from fmeval.exceptions import EvalAlgorithmClientError
-from fmeval.transforms.transform import Transform, Record
-
 import ray
 import nltk
 import evaluate as hf_evaluate
 
+from ray import ObjectRef
+from fmeval.exceptions import EvalAlgorithmClientError
+from fmeval.transforms.transform import Transform, Record
+from fmeval.transforms.transform_pipeline import TransformPipeline
+
 from nltk import word_tokenize
 from nltk.translate import meteor_score
 
-from fmeval.transforms.transform_pipeline import TransformPipeline
 
 METEOR_SCORE = "meteor"
 ROUGE_SCORE = "rouge"
@@ -96,7 +91,8 @@ class RougeScore(Transform):
                 f"Invalid rouge_type: {rouge_type} requested in SummarizationAccuracyConfig, "
                 f"please choose from acceptable values: {ROUGE_TYPES}"
             )
-        super().__init__(target_output_key, model_output_key, rouge_score_output_key, rouge_type=rouge_type, use_stemmer=use_stemmer)
+        super().__init__(target_output_key, model_output_key, rouge_score_output_key, rouge_type=rouge_type,
+                         use_stemmer=use_stemmer)
         self.target_output_key = target_output_key
         self.model_output_key = model_output_key
         self.rouge_score_output_key = rouge_score_output_key
@@ -132,13 +128,13 @@ class BertScore(Transform):
             target_output_key: str,
             model_output_key: str,
             bertscore_output_key: str,
-            bertscore_model_ref: ObjectRef
+            bertscore_model: ObjectRef,
     ):
-        super().__init__(target_output_key, model_output_key, bertscore_output_key, bertscore_model_ref)
+        super().__init__(target_output_key, model_output_key, bertscore_output_key, bertscore_model)
         self.target_output_key = target_output_key
         self.model_output_key = model_output_key
         self.bertscore_output_key = bertscore_output_key
-        self.bertscore_model_ref = bertscore_model_ref
+        self.bertscore_model = bertscore_model
 
     def __call__(self, record: Record) -> Record:
         """
@@ -150,7 +146,7 @@ class BertScore(Transform):
         https://huggingface.co/spaces/evaluate-metric/bertscore
         """
         record[self.bertscore_output_key] = ray.get(
-            self.bertscore_model_ref.get_helper_scores.remote(
+            self.bertscore_model.get_helper_scores.remote(
                 record[self.target_output_key],
                 record[self.model_output_key],
             )
@@ -166,10 +162,9 @@ class SummarizationAccuracy:
     def __init__(
             self,
             model_output_key: str,
+            bertscore_model: ObjectRef,
             rouge_type: str = ROUGE_2,
             use_stemmer_for_rouge: bool = True,
-            bertscore_model_type: str = DEFAULT_MODEL_TYPE,
-            bertscore_model_ref: Optional[ObjectRef] = None,
             meteor_score_output_key: str = METEOR_SCORE,
             rouge_score_output_key: str = ROUGE_SCORE,
             bertscore_output_key: str = BERT_SCORE,
@@ -187,16 +182,11 @@ class SummarizationAccuracy:
             rouge_type=rouge_type,
             use_stemmer=use_stemmer_for_rouge
         )
-        bertscore_model_ref = (
-            bertscore_model_ref
-            if bertscore_model_ref
-            else BertscoreHelperModel.remote(model_type=bertscore_model_type)
-        )
         bertscore_transform = BertScore(
             target_output_key="target_output",
             model_output_key=model_output_key,
             bertscore_output_key=bertscore_output_key,
-            bertscore_model_ref=bertscore_model_ref
+            bertscore_model=bertscore_model
         )
         self.pipeline = TransformPipeline([meteor_transform, rouge_transform, bertscore_transform])
         self.transforms = {

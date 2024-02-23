@@ -147,7 +147,6 @@ class DetoxifyHelperModel(BaseHelperModel):
         return DETOXIFY_SCORE_NAMES
 
 
-@ray.remote(num_cpus=1)
 class BertscoreHelperModel(BaseHelperModel):
     """
     BERTscore is a similarity-based metric that compares the embedding of the prediction and target sentences
@@ -193,3 +192,6 @@ class BertscoreHelperModel(BaseHelperModel):
             references=[target_output],
             model_type=self._model_type,
         )["f1"][0]
+
+    def __reduce__(self):
+        return BertscoreHelperModel, (self._model_type,)
