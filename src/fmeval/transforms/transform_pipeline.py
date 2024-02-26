@@ -25,7 +25,6 @@ class TransformPipeline:
 
     def execute(self, dataset: ray.data.Dataset):
         for transform in self.pipeline:
-            init_arg_names = inspect.signature(transform.__init__).parameters.keys()
             # We need to materialize the dataset after each transform to ensure that
             # the transformation gets executed in full before the next one starts.
             # Otherwise, it appears we can have deadlock.
@@ -33,6 +32,7 @@ class TransformPipeline:
                 transform.__class__,
                 fn_constructor_args=transform.args,
                 fn_constructor_kwargs=transform.kwargs,
+                num_cpus=0,  # so that the number of actors that is created isn't limited by the number of physical CPUs
                 concurrency=(1, get_num_actors()),
-            )  #.materialize()
+            ).materialize()
         return dataset

@@ -22,9 +22,6 @@ class ButterFinger(Transform):
 
     Adopted from: https://github.com/GEM-benchmark/NL-Augmenter/blob/c591130760b453b3ad09516849dfc26e721eeb24/nlaugmenter/transformations/butter_fingers_perturbation/transformation.py
     """
-
-    _transform_name = "ButterFinger"
-
     # Setting default values from NL-Augmenter
     QUERTY_KEY_APPROX: Dict[str, str] = dict()
     QUERTY_KEY_APPROX["q"] = "qwasedzx"
@@ -57,34 +54,32 @@ class ButterFinger(Transform):
     QUERTY_KEY_APPROX["m"] = "mnkjloik"
     QUERTY_KEY_APPROX[" "] = " "
 
-    def __init__(self, input_text_key: str, perturbation_prob: float, num_perturbations: int = 5, seed: int = 5):
+    def __init__(
+            self,
+            input_keys: List[str],
+            output_keys: List[str],
+            perturbation_prob: float,
+            num_perturbations: int = 5,
+            seed: int = 5
+    ):
+        assert len(input_keys) == 1
         set_seed(seed)
-        super().__init__(input_text_key, perturbation_prob, num_perturbations)
+        super().__init__(
+            input_keys,
+            output_keys,
+            perturbation_prob,
+            num_perturbations=num_perturbations,
+            seed=seed
+        )
         self.perturbation_prob = perturbation_prob
         self.num_perturbations = num_perturbations
-        self.input_text_key = input_text_key
-        self.perturbed_text_keys = self._generate_perturbed_text_keys()
 
     def __call__(self, record: Record) -> Record:
-        for perturbed_text_key in self.perturbed_text_keys:
-            assert perturbed_text_key not in record, \
-                f"Perturbed text key {perturbed_text_key} already exists in record {record}"
-
-        perturbed_texts = self.perturb(record[self.input_text_key])
-        for key, text in zip(self.perturbed_text_keys, perturbed_texts):
+        input_key = self.input_keys[0]
+        perturbed_texts = self.perturb(record[input_key])
+        for key, text in zip(self.output_keys, perturbed_texts):
             record[key] = text
-
         return record
-
-    def _generate_perturbed_text_keys(self) -> List[str]:
-        return [
-            f"{self._transform_name}({self.input_text_key})[{i}]"
-            for i in range(self.num_perturbations)
-        ]
-
-    @property
-    def output_keys(self):
-        return self.perturbed_text_keys
 
     def perturb(self, text: str) -> List[str]:
         prob_of_typo = int(self.perturbation_prob * 100)

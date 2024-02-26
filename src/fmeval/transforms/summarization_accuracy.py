@@ -1,3 +1,5 @@
+from typing import List
+
 import ray
 import nltk
 import evaluate as hf_evaluate
@@ -42,14 +44,23 @@ def _load_eval_helpers():
 class MeteorScore(Transform):
     def __init__(
             self,
+            input_keys: List[str],
+            output_keys: List[str],
             target_output_key: str,
             model_output_key: str,
-            meteor_score_output_key: str,
-            load_helpers: bool = False) -> Record:
-        super().__init__(target_output_key, model_output_key, meteor_score_output_key, load_helpers)
+            load_helpers: bool = False
+    ) -> Record:
+        assert set(input_keys) == {target_output_key, model_output_key}
+        assert len(output_keys) == 1
+        super().__init__(
+            input_keys,
+            output_keys,
+            target_output_key,
+            model_output_key,
+            load_helpers=load_helpers
+        )
         self.target_output_key = target_output_key
         self.model_output_key = model_output_key
-        self.meteor_score_output_key = meteor_score_output_key
         if load_helpers:
             _load_eval_helpers()
             self.load_helpers = False
@@ -66,36 +77,41 @@ class MeteorScore(Transform):
         well-ordered the matched words in the machine translation are in relation
         to the reference.
         """
-        record[self.meteor_score_output_key] = meteor_score.single_meteor_score(
+        output_key = self.output_keys[0]
+        record[output_key] = meteor_score.single_meteor_score(
             reference=word_tokenize(record[self.target_output_key]),
             hypothesis=word_tokenize(record[self.model_output_key])
         )
         return record
 
-    @property
-    def output_keys(self):
-        return [self.meteor_score_output_key]
-
 
 class RougeScore(Transform):
     def __init__(
             self,
+            input_keys: List[str],
+            output_keys: List[str],
             target_output_key: str,
             model_output_key: str,
-            rouge_score_output_key: str,
             rouge_type: str = ROUGE_2,
             use_stemmer: bool = True
     ) -> Record:
+        assert set(input_keys) == {target_output_key, model_output_key}
+        assert len(output_keys) == 1
         if rouge_type not in ROUGE_TYPES:
             raise EvalAlgorithmClientError(
                 f"Invalid rouge_type: {rouge_type} requested in SummarizationAccuracyConfig, "
                 f"please choose from acceptable values: {ROUGE_TYPES}"
             )
-        super().__init__(target_output_key, model_output_key, rouge_score_output_key, rouge_type=rouge_type,
-                         use_stemmer=use_stemmer)
+        super().__init__(
+            input_keys,
+            output_keys,
+            target_output_key,
+            model_output_key,
+            rouge_type=rouge_type,
+            use_stemmer=use_stemmer
+        )
         self.target_output_key = target_output_key
         self.model_output_key = model_output_key
-        self.rouge_score_output_key = rouge_score_output_key
         self.rouge_type = rouge_type
         self.use_stemmer = use_stemmer
 
@@ -109,7 +125,7 @@ class RougeScore(Transform):
         Reference: https://huggingface.co/spaces/evaluate-metric/rouge
         """
         rouge = hf_evaluate.load("rouge")
-        record[self.rouge_score_output_key] = rouge.compute(
+        record[self.output_keys[0]] = rouge.compute(
             predictions=[record[self.model_output_key]],
             references=[record[self.target_output_key]],
             use_stemmer=self.use_stemmer,
@@ -117,23 +133,21 @@ class RougeScore(Transform):
         )[self.rouge_type]
         return record
 
-    @property
-    def output_keys(self):
-        return [self.rouge_score_output_key]
-
 
 class BertScore(Transform):
     def __init__(
             self,
+            input_keys: List[str],
+            output_keys: List[str],
             target_output_key: str,
             model_output_key: str,
-            bertscore_output_key: str,
             bertscore_model: ObjectRef,
     ):
-        super().__init__(target_output_key, model_output_key, bertscore_output_key, bertscore_model)
+        assert set(input_keys) == {target_output_key, model_output_key}
+        assert len(output_keys) == 1
+        super().__init__(input_keys, output_keys, target_output_key, model_output_key, bertscore_model)
         self.target_output_key = target_output_key
         self.model_output_key = model_output_key
-        self.bertscore_output_key = bertscore_output_key
         self.bertscore_model = bertscore_model
 
     def __call__(self, record: Record) -> Record:
@@ -145,7 +159,7 @@ class BertScore(Transform):
 
         https://huggingface.co/spaces/evaluate-metric/bertscore
         """
-        record[self.bertscore_output_key] = ray.get(
+        record[self.output_keys[0]] = ray.get(
             self.bertscore_model.get_helper_scores.remote(
                 record[self.target_output_key],
                 record[self.model_output_key],
@@ -153,39 +167,39 @@ class BertScore(Transform):
         )
         return record
 
-    @property
-    def output_keys(self):
-        return [self.bertscore_output_key]
-
 
 class SummarizationAccuracy:
     def __init__(
             self,
+            target_output_key: str,
             model_output_key: str,
             bertscore_model: ObjectRef,
             rouge_type: str = ROUGE_2,
             use_stemmer_for_rouge: bool = True,
             meteor_score_output_key: str = METEOR_SCORE,
             rouge_score_output_key: str = ROUGE_SCORE,
-            bertscore_output_key: str = BERT_SCORE,
+            bert_score_output_key: str = BERT_SCORE,
     ):
         meteor_transform = MeteorScore(
-            target_output_key="target_output",  # use a constant in final version
+            input_keys=[target_output_key, model_output_key],
+            output_keys=[meteor_score_output_key],
+            target_output_key=target_output_key,
             model_output_key=model_output_key,
-            meteor_score_output_key=meteor_score_output_key,
             load_helpers=True,
         )
         rouge_transform = RougeScore(
-            target_output_key="target_output",
+            input_keys=[target_output_key, model_output_key],
+            output_keys=[rouge_score_output_key],
+            target_output_key=target_output_key,
             model_output_key=model_output_key,
-            rouge_score_output_key=rouge_score_output_key,
             rouge_type=rouge_type,
             use_stemmer=use_stemmer_for_rouge
         )
         bertscore_transform = BertScore(
-            target_output_key="target_output",
+            input_keys=[target_output_key, model_output_key],
+            output_keys=[bert_score_output_key],
+            target_output_key=target_output_key,
             model_output_key=model_output_key,
-            bertscore_output_key=bertscore_output_key,
             bertscore_model=bertscore_model
         )
         self.pipeline = TransformPipeline([meteor_transform, rouge_transform, bertscore_transform])
