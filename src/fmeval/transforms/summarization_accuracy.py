@@ -168,7 +168,7 @@ class BertScore(Transform):
         return record
 
 
-class SummarizationAccuracy:
+class SummarizationAccuracyTransforms:
     def __init__(
             self,
             target_output_key: str,

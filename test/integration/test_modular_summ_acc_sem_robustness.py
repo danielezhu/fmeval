@@ -2,7 +2,7 @@ from fmeval.data_loaders.util import get_dataset
 from fmeval.eval_algorithms.helper_models.helper_model import BertscoreHelperModel
 from fmeval.eval_algorithms.summarization_accuracy import DEFAULT_MODEL_TYPE
 from fmeval.transforms.perturbations import ButterFinger
-from fmeval.transforms.summarization_accuracy import SummarizationAccuracy, METEOR_SCORE, ROUGE_SCORE, BERT_SCORE, \
+from fmeval.transforms.summarization_accuracy import SummarizationAccuracyTransforms, METEOR_SCORE, ROUGE_SCORE, BERT_SCORE, \
     MeteorScore, RougeScore, BertScore
 from fmeval.transforms.util import GeneratePrompt, GetModelResponse, GenerateDeltaScores, Mean, \
     shared_resource, create_output_key
@@ -59,14 +59,14 @@ get_perturbed_responses = [
 
 
 bertscore_model = shared_resource(BertscoreHelperModel(DEFAULT_MODEL_TYPE))
-og_summ_acc = SummarizationAccuracy(
+og_summ_acc = SummarizationAccuracyTransforms(
     target_output_key="target_output",
     model_output_key=get_og_response.output_keys[0],
     bertscore_model=bertscore_model,
 )
 
 perturbed_summ_accs = [
-    SummarizationAccuracy(
+    SummarizationAccuracyTransforms(
         target_output_key="target_output",
         model_output_key=get_perturbed_response.output_keys[0],
         bertscore_model=bertscore_model,

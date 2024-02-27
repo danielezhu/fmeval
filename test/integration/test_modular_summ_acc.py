@@ -1,6 +1,6 @@
 from fmeval.data_loaders.util import get_dataset
 from fmeval.eval_algorithms.helper_models.helper_model import BertscoreHelperModel
-from fmeval.transforms.summarization_accuracy import SummarizationAccuracy, DEFAULT_MODEL_TYPE
+from fmeval.transforms.summarization_accuracy import SummarizationAccuracyTransforms, DEFAULT_MODEL_TYPE
 from fmeval.transforms.util import GeneratePrompt, GetModelResponse, shared_resource, create_output_key
 from fmeval.transforms.transform_pipeline import TransformPipeline
 from fmeval.eval_algorithms import DATASET_CONFIGS, XSUM
@@ -23,7 +23,7 @@ get_model_response = GetModelResponse(
 )
 
 bertscore_model = shared_resource(BertscoreHelperModel(DEFAULT_MODEL_TYPE))
-summ_acc = SummarizationAccuracy(
+summ_acc = SummarizationAccuracyTransforms(
     target_output_key="target_output",
     model_output_key=get_model_response.output_keys[0],
     bertscore_model=bertscore_model
