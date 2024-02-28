@@ -24,10 +24,7 @@ from fmeval.eval_algorithms import (
     DATASET_CONFIGS,
     get_default_prompt_template,
 )
-from fmeval.eval_algorithms.eval_algorithm import (
-    EvalAlgorithmConfig,
-    EvalAlgorithmInterface,
-)
+from fmeval.eval_algorithms.eval_algorithm import EvalAlgorithmInterface, EvalAlgorithmConfig
 from fmeval.eval_algorithms.helper_models.helper_model import BertscoreHelperModel
 from fmeval.eval_algorithms.util import (
     generate_prompt_column_for_dataset,
@@ -40,10 +37,15 @@ from fmeval.eval_algorithms.util import (
 from fmeval.exceptions import EvalAlgorithmClientError
 from fmeval.model_runners.model_runner import ModelRunner
 from fmeval.perf_util import timed_block
+from fmeval.transforms.summarization_accuracy import SummarizationAccuracyTransforms
+from fmeval.transforms.transform import Record
+from fmeval.transforms.transform_pipeline import TransformPipeline
+from fmeval.transforms.util import GeneratePrompt, GetModelResponse, shared_resource
 
 METEOR_SCORE = "meteor"
 ROUGE_SCORE = "rouge"
 BERT_SCORE = "bertscore"
+METRIC_NAMES = [METEOR_SCORE, ROUGE_SCORE, BERT_SCORE]
 
 # rouge constants
 ROUGE_1 = "rouge1"
@@ -68,23 +70,23 @@ class SummarizationAccuracyConfig(EvalAlgorithmConfig):
 
     :param rouge_type: Type of rouge metric in eval results
     :param use_stemmer_for_rouge: bool value to set using stemmer for rouge metric
-    :param model_type_for_bertscore: model to use for bert score
+    :param bertscore_model_type: model to use for bert score
     """
 
     rouge_type: str = ROUGE_2
     use_stemmer_for_rouge: bool = True
-    model_type_for_bertscore: str = DEFAULT_MODEL_TYPE
+    bertscore_model_type: str = DEFAULT_MODEL_TYPE
 
     def __post_init__(self):
-        if not self.rouge_type in ROUGE_TYPES:
+        if self.rouge_type not in ROUGE_TYPES:
             raise EvalAlgorithmClientError(
                 f"Invalid rouge_type: {self.rouge_type} requested in SummarizationAccuracyConfig, "
                 f"please choose from acceptable values: {ROUGE_TYPES}"
             )
 
-        if not self.model_type_for_bertscore in MODEL_TYPES_SUPPORTED:
+        if self.bertscore_model_type not in MODEL_TYPES_SUPPORTED:
             raise EvalAlgorithmClientError(
-                f"Invalid model_type_for_bertscore: {self.model_type_for_bertscore} requested in "
+                f"Invalid bertscore_model_type: {self.bertscore_model_type} requested in "
                 f"SummarizationAccuracyConfig, please choose from acceptable values: {MODEL_TYPES_SUPPORTED}"
             )
 
@@ -99,72 +101,41 @@ class SummarizationAccuracy(EvalAlgorithmInterface):
     """
 
     def __init__(self, eval_algorithm_config: SummarizationAccuracyConfig = SummarizationAccuracyConfig()):
-        """Default constructor
-
-        :param eval_algorithm_config: Summarization Accuracy eval algorithm config.
-        """
         super().__init__(eval_algorithm_config)
         self.eval_name = EvalAlgorithm.SUMMARIZATION_ACCURACY.value
-        self._eval_algorithm_config = eval_algorithm_config
-        self._load_eval_helpers()
-        self._score_eval_func_mapping = {
-            METEOR_SCORE: get_meteor_score,
-            ROUGE_SCORE: get_rouge_score,
-            BERT_SCORE: get_bert_score,
+        bertscore_model = shared_resource(BertscoreHelperModel(eval_algorithm_config.bertscore_model_type))
+        summ_acc = SummarizationAccuracyTransforms(
+            target_output_key=DatasetColumns.TARGET_OUTPUT.value.name,
+            model_output_key=DatasetColumns.MODEL_OUTPUT.value.name,
+            bertscore_model=bertscore_model,
+            rouge_type=eval_algorithm_config.rouge_type,
+            use_stemmer_for_rouge=eval_algorithm_config.use_stemmer_for_rouge,
+        )
+        self.pipeline = summ_acc.pipeline
+
+    @staticmethod
+    def create_sample(target_output: str, model_output: str) -> Record:
+        return {
+            DatasetColumns.TARGET_OUTPUT.value.name: target_output,
+            DatasetColumns.MODEL_OUTPUT.value.name: model_output
         }
 
-    def _load_eval_helpers(self):
-        """
-        Method to download required helpers for eval_algo in constructor call
-        """
-        # load helper modules for meteor
-        nltk.download("wordnet")
-        nltk.download("punkt")
-        nltk.download("omw-1.4")
-
-        # Initialize the shared BertscoreHelperModel actor that will be shared
-        # by every get_bert_score task.
-        self._bertscore_helper_model = BertscoreHelperModel.remote(
-            model_type=self._eval_algorithm_config.model_type_for_bertscore
-        )
-
     def evaluate_sample(self, target_output: str, model_output: str) -> List[EvalScore]:  # type: ignore[override]
-        """
-        Summarization Accuracy evaluate sample.
-
-        :param target_output: The expected responses from the model
-        :param model_output: The output of a model that we want to evaluate.
-        :return: list of EvalScore objects
-        """
-        if target_output is None:
-            raise EvalAlgorithmClientError(
-                "Missing required input: target_output, for Summarization Accuracy evaluate_sample"
-            )
-        if model_output is None:
-            raise EvalAlgorithmClientError(
-                "Missing required input: model_output, for Summarization Accuracy evaluate_sample"
-            )
-
+        sample = SummarizationAccuracy.create_sample(target_output=target_output, model_output=model_output)
+        output_record = self.pipeline.execute([sample])[0]
+        assert all(metric_name in output_record for metric_name in METRIC_NAMES)
         return [
-            EvalScore(
-                name=eval_score,
-                value=eval_fn(
-                    target_output=target_output,
-                    model_output=model_output,
-                    config=self._eval_algorithm_config,
-                    helper_model=self._bertscore_helper_model,  # only used by get_bert_score
-                ),
-            )
-            for eval_score, eval_fn in self._score_eval_func_mapping.items()
+            EvalScore(name=metric_name, value=output_record[metric_name])
+            for metric_name in METRIC_NAMES
         ]
 
     def evaluate(
-        self,
-        model: Optional[ModelRunner] = None,
-        dataset_config: Optional[DataConfig] = None,
-        prompt_template: Optional[str] = None,
-        save: bool = False,
-        num_records=100,
+            self,
+            model: Optional[ModelRunner] = None,
+            dataset_config: Optional[DataConfig] = None,
+            prompt_template: Optional[str] = None,
+            save: bool = False,
+            num_records=100,
     ) -> List[EvalOutput]:
         """
         Summarization Accuracy evaluate
@@ -191,28 +162,27 @@ class SummarizationAccuracy(EvalAlgorithmInterface):
             dataset = get_dataset(dataset_config, num_records)
             validate_dataset(dataset, [DatasetColumns.TARGET_OUTPUT.value.name, DatasetColumns.MODEL_INPUT.value.name])
             dataset_prompt_template = None
+            pipeline = self.pipeline
+
             if DatasetColumns.MODEL_OUTPUT.value.name not in dataset.columns():
                 util.require(model, "No ModelRunner provided. ModelRunner is required for inference on model_inputs")
                 dataset_prompt_template = (
                     get_default_prompt_template(dataset_config.dataset_name) if not prompt_template else prompt_template
                 )
-                dataset = generate_prompt_column_for_dataset(
-                    dataset_prompt_template,
-                    dataset,
-                    DatasetColumns.MODEL_INPUT.value.name,
-                    DatasetColumns.PROMPT.value.name,
+                gen_prompt = GeneratePrompt(
+                    input_keys=[DatasetColumns.MODEL_INPUT.value.name],
+                    output_keys=[DatasetColumns.PROMPT.value.name],
+                    prompt_template=prompt_template,
                 )
-                assert model  # to satisfy mypy
-                dataset = generate_model_predict_response_for_dataset(
-                    model, dataset, DatasetColumns.PROMPT.value.name, DatasetColumns.MODEL_OUTPUT.value.name
+                get_model_response = GetModelResponse(
+                    input_keys=gen_prompt.output_keys,
+                    output_keys=[DatasetColumns.MODEL_OUTPUT.value.name],
+                    model_runner=model,
                 )
+                pipeline = TransformPipeline([gen_prompt, get_model_response], pipeline)
+
             with timed_block(f"Computing score and aggregation on dataset {dataset_config.dataset_name}", logger):
-                dataset = add_score_to_dataset(
-                    dataset=dataset,
-                    score_name_to_func=self._score_eval_func_mapping,
-                    config=self._eval_algorithm_config,
-                    helper_model=self._bertscore_helper_model,
-                )
+                dataset = pipeline.execute(dataset)
                 dataset_scores, category_scores = aggregate_evaluation_scores(
                     dataset, [METEOR_SCORE, ROUGE_SCORE, BERT_SCORE], agg_method=MEAN
                 )
@@ -242,102 +212,3 @@ class SummarizationAccuracy(EvalAlgorithmInterface):
                 )
 
         return eval_outputs
-
-
-def get_meteor_score(target_output: str, model_output: str, config: SummarizationAccuracyConfig, **kwargs) -> float:
-    """
-    METEOR is a metric for text similarity between the machine-produced summary and human-produced reference summaries.
-    Unigrams can be matched based on their surface forms, stemmed forms,
-    and meanings; furthermore, METEOR can be easily extended to include more
-    advanced matching strategies. Once all generalized unigram matches
-    between the two strings have been found, METEOR computes a score for
-    this matching using a combination of unigram-precision, unigram-recall, and
-    a measure of fragmentation that is designed to directly capture how
-    well-ordered the matched words in the machine translation are in relation
-    to the reference.
-
-    :param target_output: The expected responses from the model
-    :param model_output: The output of a model that we want to evaluate.
-    :param config: Eval algo config
-    :returns: meteor score
-    """
-    return meteor_score.single_meteor_score(
-        reference=word_tokenize(target_output), hypothesis=word_tokenize(model_output)
-    )
-
-
-def get_rouge_score(target_output: str, model_output: str, config: SummarizationAccuracyConfig, **kwargs) -> float:
-    """
-    The ROUGE-N, where N=[1,2,L], score is a standard metric for summarization quality.
-    It computes the word overlap between the reference and model summary. Given that this metric is based on simple
-    word overlap statistics, it works best for extractive summaries.
-    Note that if we rephrase the summary without changing its meaning the ROUGE-N score will drop.
-
-    Reference: https://huggingface.co/spaces/evaluate-metric/rouge
-
-    :param target_output: The expected responses from the model
-    :param model_output: The output of a model that we want to evaluate.
-    :param config: Eval algo config
-    :returns: rouge score
-    """
-    rouge = hf_evaluate.load("rouge")
-    return rouge.compute(
-        predictions=[model_output],
-        references=[target_output],
-        use_stemmer=config.use_stemmer_for_rouge,
-        rouge_types=[config.rouge_type],
-    )[config.rouge_type]
-
-
-def get_bert_score(target_output: str, model_output: str, config: SummarizationAccuracyConfig, **kwargs) -> float:
-    """
-    BERTscore is a similarity-based metric that compares the embedding of the prediction and target sentences
-    under a learned model, typically, from the BERT family.
-    This score may lead to increased flexibility compared to ROUGE and METEOR in terms of rephrasing since
-    semantically similar sentences are (typically) embedded similarly.
-
-    https://huggingface.co/spaces/evaluate-metric/bertscore
-
-    :param target_output: The expected responses from the model
-    :param model_output: The output of a model that we want to evaluate.
-    :param config: Eval algo config
-    :param helper_model: The BertscoreHelperModel belonging to an instance of SummarizationAccuracy.
-    :returns: bert score
-    """
-    assert "helper_model" in kwargs
-    helper_model = kwargs["helper_model"]
-    return ray.get(helper_model.get_helper_scores.remote(target_output, model_output))
-
-
-def add_score_to_dataset(
-    dataset: Dataset,
-    score_name_to_func: Dict[str, Callable],
-    config: SummarizationAccuracyConfig,
-    helper_model: BertscoreHelperModel,
-):
-    """
-    Util method to add a score column to a ray dataset.
-
-    :param dataset: ray Dataset to be used for eval score generation
-    :param score_name_to_func: maps column names for scores to be added to the functions used to compute those scores
-    :param config: Eval algo config
-    :param helper_model: The BertscoreHelperModel belonging to an
-        instance of SummarizationAccuracy. Used only by get_bert_score.
-    :returns: ray Dataset with score column
-    """
-
-    def _generate_eval_scores(row: Dict[str, Any]) -> Dict[str, Any]:  # pragma: no cover
-        """
-        Map function generating the scores for every input record in input dataset
-        """
-        for score_name in score_name_to_func:
-            eval_func = score_name_to_func[score_name]
-            row[score_name] = eval_func(
-                row[DatasetColumns.TARGET_OUTPUT.value.name],
-                row[DatasetColumns.MODEL_OUTPUT.value.name],
-                config,
-                helper_model=helper_model,
-            )
-        return row
-
-    return dataset.map(_generate_eval_scores).materialize()
