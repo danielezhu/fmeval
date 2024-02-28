@@ -57,13 +57,12 @@ class MeteorScore(Transform):
             output_keys,
             target_output_key,
             model_output_key,
-            load_helpers=load_helpers
+            load_helpers=False,  # after calling _load_eval_helpers during initialization, we never need to do so again
         )
         self.target_output_key = target_output_key
         self.model_output_key = model_output_key
         if load_helpers:
             _load_eval_helpers()
-            self.load_helpers = False
 
     def __call__(self, record: Record):
         """
